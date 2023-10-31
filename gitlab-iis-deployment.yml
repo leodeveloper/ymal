@@ -1,0 +1,316 @@
+variables:
+  MSBUILD_PATH: '"C:\Program Files (x86)\Microsoft Visual Studio\2019\Community\MSBuild\Current\Bin\MSBuild.exe"'
+  MSSONAR_SCANNER: 'C:\sonar-scanner-msbuild\SonarScanner.MSBuild.exe'
+  SONAR_KEY: -portal
+  AWS_CLI_PATH: '"C:\Program Files\Amazon\AWSCLIV2\aws.exe"'
+  MSDEPLOY_PATH: 'C:\Program Files (x86)\IIS\Microsoft Web Deploy V3\msdeploy.exe'
+  PATH_LOCATION: '\bin\Publish'
+  # QA_UAT_USER: $USERNAME
+  # UAT_PASS: $PASSSWORD
+  # QA_PASS: $PASSWORD
+  # BETA_PROD_USER: $USERNAME
+  # BETA_PROD_PASS: $PASSSWORD
+
+stages:
+  - build_qa
+  - build_uat
+  - build_beta
+  - build_prod
+  - sonar_gates
+  - Publish_Artifacts_to_S3_qa
+  - Publish_Artifacts_to_S3_uat
+  - Publish_Artifacts_to_S3_beta
+  - Publish_Artifacts_to_S3_prod
+  - deploy_qa
+  - deploy_uat
+  - deploy_beta
+  - deploy_prod
+
+ 
+
+build_qa:
+    stage: build_qa
+    tags:
+     - winrunner2
+    script:
+      - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - cmd /C "$MSBUILD_PATH Project.sln /t:Clean"
+      - cmd /C "$MSBUILD_PATH Project.sln"
+      - cmd /C "$Project.WEB /p:Configuration=QA /p:DeployOnBuild=true /p:PublishProfile=PublishProfile.pubxml"
+      - mkdir $PATH_LOCATION\xdtconfig
+      - aws s3 cp s3://Stagging/Web.config $PATH_LOCATION/
+      # - copy Web\Web.prod.config  $PATH_LOCATION\xdtconfig\
+      - copy Web\Web.QA.config  $PATH_LOCATION\
+      - Ren $PATH_LOCATION\"Web.QA.config" "Web.config"
+      # - copy Web\Web.Release.config  $PATH_LOCATION\xdtconfig\
+      # - copy Web\Web.UAT.config  $PATH_LOCATION\xdtconfig\
+    artifacts:
+     name: 'publish_code'
+     paths:
+      - $CI_PROJECT_DIR\$PATH_LOCATION
+     expire_in: '1 days' 
+    rules:
+       - if: '$CONTEXT == "qa"'
+    allow_failure: false
+    environment: qa
+
+
+build_uat:
+    stage: build_uat
+    tags:
+      - winrunner2
+    script:
+      - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+      - cmd /C "$MSBUILD_PATH Project.sln /t:Clean"
+      - cmd /C "$MSBUILD_PATH Project.sln"
+      - cmd /C "$MSBUILD_PATH Project.WEB /p:Configuration=QA /p:DeployOnBuild=true /p:PublishProfile=Project.PublishProfile.pubxml"
+      - del $PATH_LOCATION\Web.config
+      - aws s3 cp s3://Uat/Web.config $PATH_LOCATION/
+    artifacts:
+     name: 'publish_code'
+     paths:
+      - $CI_PROJECT_DIR\$PATH_LOCATION
+     expire_in: '1 days'
+    rules:
+      - if: '$CONTEXT == "uat"'
+    allow_failure: false
+    environment: uat
+
+build_beta:
+    stage: build_beta
+    tags:
+     - winrunner2
+    script:
+      - echo 'Building solution for BETA environment'
+      - cmd /C "$MSBUILD_PATH Project.sln /t:Clean"
+      - cmd /C "$MSBUILD_PATH Project.sln"
+      - cmd /C "$MSBUILD_PATH Project.WEB /p:Configuration=Release /p:DeployOnBuild=true /p:PublishProfile=Project.PublishProfile.pubxml"
+      - del $PATH_LOCATION/Web.config
+      - copy Project.Web/Web.Release.config $PATH_LOCATION/
+      - Ren $PATH_LOCATION/"Web.Release.config" "Web.config"
+    artifacts:
+     name: 'publish_code'
+     paths:
+      - $CI_PROJECT_DIR\$PATH_LOCATION
+     expire_in: '1 days'
+    rules:
+      - if: '$CONTEXT == "beta"'
+    allow_failure: false
+    environment: beta
+
+build_prod:
+  stage: build_prod
+  tags:
+    - winrunner2
+  script:
+    - echo 'Building solution for PROD environment'
+    - cmd /C "$MSBUILD_PATH Project.sln /t:Clean"
+    - cmd /C "$MSBUILD_PATH Project.sln"
+    - cmd /C "$MSBUILD_PATH Project.WEB /p:Configuration=Prod /p:DeployOnBuild=true /p:PublishProfile=Project.PublishProfile.pubxml"
+    - del $PATH_LOCATION/Web.config
+    - copy Project.Web/Web.Prod.config $PATH_LOCATION/
+    - Ren $PATH_LOCATION/"Web.Prod.config" "Web.config"
+  artifacts:
+     name: 'publish_code'
+     paths:
+      - $CI_PROJECT_DIR\$PATH_LOCATION
+     expire_in: '1 days'
+  rules:
+    - if: '$CONTEXT == "prod"'
+  allow_failure: false
+  environment: prod
+
+# sonar_gates:
+#   stage: sonar_gates
+#   tags:
+#     - winrunner2
+#   script:
+#     - echo 'Checking SonarQube analysis and gates....'
+#     - '& "$MSSONAR_SCANNER" begin /k:"$SONAR_KEY" /d:sonar.qualitygate.wait=true /d:sonar.qualitygate.timeout=600  /d:sonar.host.url="$SONAR_URL" /d:sonar.login="$SONAR_TOKEN"'
+#     - cmd /C "$MSBUILD_PATH /t:Rebuild"
+#     - '& "$MSSONAR_SCANNER" end /d:sonar.login="$SONAR_TOKEN"'
+#   rules:
+#     - if: '$CONTEXT == "qa"'
+#     - if: '$CONTEXT == "uat"'
+#     - if: '$CONTEXT == "beta"'
+#     #- if: '$CONTEXT == "prod"'
+#   allow_failure: false
+
+Publish_Artifacts_to_S3_qa:
+   stage: Publish_Artifacts_to_S3_qa
+   dependencies:
+     - build_qa
+   tags:
+     - winrunner2
+   script:
+     - echo 'Publishing artifacts to S3....'
+     - $VERSION = (Get-Date -Format 'yy.MM.dd')
+     - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+     - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+     - cmd /C "$AWS_CLI_PATH s3 cp $CI_PROJECT_DIR\$PATH_LOCATION s3://QA/-$VERSION-$CI_COMMIT_SHORT_SHA --recursive"
+   rules:
+     - if: '$CONTEXT == "qa"'
+   allow_failure: false
+   environment: qa
+
+
+Publish_Artifacts_to_S3_uat:
+   stage: Publish_Artifacts_to_S3_uat
+   dependencies:
+     - build_uat
+   tags:
+     - winrunner2
+   script:
+     - echo 'Publishing artifacts to S3....'
+     - $VERSION = (Get-Date -Format 'yy.MM.dd')
+     - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+     - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+     - cmd /C "$AWS_CLI_PATH s3 cp $CI_PROJECT_DIR\$PATH_LOCATION s3://UAT/-$VERSION-$CI_COMMIT_SHORT_  --recursive"
+   rules:
+     - if: '$CONTEXT == "uat"'
+   allow_failure: false
+   environment: uat
+
+
+Publish_Artifacts_to_S3_beta:
+   stage: Publish_Artifacts_to_S3_beta
+   dependencies:
+     - build_beta
+   tags:
+     - winrunner2
+   script:
+     - echo 'Publishing artifacts to S3....'
+     - $VERSION = (Get-Date -Format 'yy.MM.dd')
+     - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+     - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+     - cmd /C "$AWS_CLI_PATH s3 cp $CI_PROJECT_DIR\$PATH_LOCATION  s3://PROD/-Beta/-$VERSION-$CI_COMMIT_SHORT_  --recursive"
+   rules:
+     - if: '$CONTEXT == "beta"'
+   allow_failure: false
+   environment: beta
+
+
+
+Publish_Artifacts_to_S3_prod:
+   stage: Publish_Artifacts_to_S3_prod
+   dependencies:
+     - build_prod
+   tags:
+     - winrunner2
+   script:
+     - echo 'Publishing artifacts to S3....'
+     - $VERSION = (Get-Date -Format 'yy.MM.dd')
+     - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+     - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+     - cmd /C "$AWS_CLI_PATH s3 cp $CI_PROJECT_DIR\$PATH_LOCATION  s3://PROD/-$VERSION-$CI_COMMIT_SHORT_  --recursive"
+   rules:
+     - if: '$CONTEXT == "prod"'
+   allow_failure: false
+   environment: prod
+
+
+deploy_qa:
+   stage: deploy_qa
+   needs:
+     - Publish_Artifacts_to_S3_qa
+   tags:
+     - winrunner2
+   before_script:
+    - powershell -Command "if (Test-Path 'Backup') { echo 'Backup exists' } ELSE {New-Item -ItemType Directory -Path 'Backup'; echo 'Backup created'}"
+   script:
+     - echo 'Deploying build on QA environment....'
+     - $VERSION = (Get-Date -Format 'yy.MM.dd')
+     - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+     - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+     - cmd /C "$AWS_CLI_PATH s3 cp s3://QA/project-$VERSION-$CI_COMMIT_SHORT_SHA $CI_PROJECT_DIR\Backup --recursive"
+     - cmd /C "rmdir $CI_PROJECT_DIR\Backup\xdtconfig /s /q"
+    # - cmd /C "$MSDEPLOY_PATH -verb:sync -source:iisApp="$CI_PROJECT_DIR\Backup" -dest:iisApp=project,ComputerName="$ComputerName_QA",UserName="$USER",Password="$",AuthType='Basic' -allowUntrusted
+     - '& "$MSDEPLOY_PATH" -verb:sync -source:dirpath="$CI_PROJECT_DIR\Backup" -dest:dirpath="C:\inetpub\wwwroot\Project",ComputerName="https://IP:port/MsDeploy.axd",UserName="",Password="",AuthType="Basic" -allowUntrusted'
+   rules:
+     - if: '$CONTEXT == "qa"'
+       when: manual
+   allow_failure: false
+   environment: qa
+
+deploy_uat:
+   stage: deploy_uat
+   needs:
+     - Publish_Artifacts_to_S3_uat
+   tags:
+     - winrunner2
+   before_script:
+    - powershell -Command "if (Test-Path 'Backup') { echo 'Backup exists' } ELSE {New-Item -ItemType Directory -Path 'Backup'; echo 'Backup created'}"
+   script:
+     - echo "Deploying on UAT..."
+     - echo "$CI_COMMIT_SHA"
+     - echo "$CI_COMMIT_REF_NAME"
+     - $VERSION = (Get-Date -Format 'yy.MM.dd')
+     - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+     - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+     - cmd /C "$AWS_CLI_PATH s3 sync s3://UAT/-$VERSION-$CI_COMMIT_SHORT_SHA $CI_PROJECT_DIR\Backup"
+     - '& "$MSDEPLOY_PATH" -verb:sync -source:dirpath="$CI_PROJECT_DIR\Backup" -dest:dirpath="C:\inetpub\wwwroot\",ComputerName="https://IP:port/MsDeploy.axd",UserName="",Password="",AuthType="Basic" -allowUntrusted'
+     #- cmd /C '"$MSDEPLOY_PATH" -verb:sync -source:dirpath="$CI_PROJECT_DIR%\Backup" -dest:dirpath="C:\inetpub\wwwroot\",ComputerName="%UAT_COMPUTER_NAME%",UserName=%QA_UAT_USER%,Password=%UAT_PASS%,AuthType="Basic" -allowUntrusted'
+   rules:
+     - if: '$CONTEXT == "uat"'
+       when: manual
+   allow_failure: false
+   environment: uat
+
+deploy_beta:
+   stage: deploy_beta
+   needs:
+     - Publish_Artifacts_to_S3_beta
+   tags:
+     - winrunner2
+   before_script:
+    - powershell -Command "if (Test-Path 'Backup') { echo 'Backup exists' } ELSE {New-Item -ItemType Directory -Path 'Backup'; echo 'Backup created'}"
+   script:
+     - echo "Deploying on BETA..."
+     - $VERSION = (Get-Date -Format 'yy.MM.dd')
+     - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+     - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+     - cmd /C "$AWS_CLI_PATH s3 cp s3://Beta/-$VERSION-$CI_COMMIT_SHORT_SHA $CI_PROJECT_DIR\Backup --recursive"
+     - '& "$MSDEPLOY_PATH" -verb:sync -source:dirpath="$CI_PROJECT_DIR\Backup" -dest:dirpath="C:\inetpub\wwwroot\-Prod",ComputerName="https://IP:port/MsDeploy.axd",UserName="",Password="",AuthType="Basic" -allowUntrusted'
+     #- '& "$MSDEPLOY_PATH" -verb:sync -source:dirpath="$CI_PROJECT_DIR\Backup" -dest:dirpath="C:\inetpub\wwwroot\-Beta",ComputerName="$ComputerName_BETA",UserName=,Password="$PASSWORD",AuthType="Basic" -allowUntrusted'
+     #- cmd /C '%MSDEPLOY_PATH% -verb:sync -source:dirpath="%CI_PROJECT_DIR%\Backup" -dest:dirpath="C:\inetpub\wwwroot\-Prod",ComputerName="https://IP:port/MsDeploy.axd",UserName=,Password=%PASSWORD%,AuthType="Basic" -allowUntrusted'
+
+   rules:
+     - if: '$CONTEXT == "beta"'
+       when: manual
+   allow_failure: false
+   environment: beta
+
+
+deploy_prod:
+   stage: deploy_prod
+   needs:
+     - Publish_Artifacts_to_S3_prod
+   tags:
+     - winrunner2
+   before_script:
+    - powershell -Command "if (Test-Path 'Backup') { echo 'Backup exists' } ELSE {New-Item -ItemType Directory -Path 'Backup'; echo 'Backup created'}"
+   script:
+     - echo "Deploying on PROD..."
+     - $VERSION = (Get-Date -Format 'yy.MM.dd')
+     - set AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+     - set AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+     - set AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION}
+     - cmd /C "$AWS_CLI_PATH s3 cp s3://cicd-artifacts-backup/-PORTAL/PROD/-$VERSION-$CI_COMMIT_SHORT_SHA $CI_PROJECT_DIR\Backup --recursive"
+     #- cmd /C "$MSDEPLOY_PATH -verb:sync -source:iisApp="$CI_PROJECT_DIR\Backup" -dest:iisApp="",ComputerName="$ComputerName_BETA",UserName="$USER",Password="$PASSWORD",AuthType='Basic' -allowUntrusted
+     - '& "$MSDEPLOY_PATH" -verb:sync -source:dirpath="$CI_PROJECT_DIR\Backup" -dest:dirpath="C:\inetpub\wwwroot\-V1",ComputerName="https://IP:port/MsDeploy.axd",UserName="",Password="",AuthType="Basic" -allowUntrusted'
+   rules:
+     - if: '$CONTEXT == "prod"'
+       when: manual
+   allow_failure: false
+   environment: prod

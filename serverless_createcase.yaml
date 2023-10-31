@@ -1,0 +1,74 @@
+service: servicename
+frameworkVersion: '3'
+custom:
+  deploymentBucket:
+    accelerate: true
+    blockPublicAccess: true
+    BlockPublicAcls: true
+    BlockPublicPolicy: true
+    IgnorePublicAcls: true
+    RestrictPublicBuckets: true
+    versioning: true
+  prune:
+    automatic: true
+    number: 10
+  dev:
+    rest_api_id: TODO
+    restapi_root_resource_id: TODO
+    deploymentBucket: cicd-artifacts-backup
+  uat:
+    rest_api_id: 
+    restapi_root_resource_id: 
+    deploymentBucket: 
+  prod:
+##Casecreate & file upload () > Resources >/ ()
+    rest_api_id: 
+    restapi_root_resource_id: 
+    deploymentBucket: 
+provider:
+  name: aws
+  region: eu-west-1
+  runtime: dotnet6
+  versionFunctions: true
+  deploymentMethod: direct
+  stage: ${env:ASPNETCORE_ENVIRONMENT}
+  deploymentBucket:
+    name: ${self:custom.${self:provider.stage}.deploymentBucket}
+    serverSideEncryption: AES256
+  deploymentPrefix: ${self:service}-${self:provider.stage}
+  apiGateway:
+    restApiId: ${self:custom.${self:provider.stage}.rest_api_id}
+    restApiRootResourceId: ${self:custom.${self:provider.stage}.restapi_root_resource_id}
+package:
+  individually: true
+functions:
+  casedetailapi:
+    handler: Api::Api.Function::FunctionHandlerAsync
+    name: ${self:service}-${self:provider.stage}
+    memorySize: 1024
+    timeout: 30
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${self:provider.stage}
+    package:
+      artifact: Api.zip
+      patterns:
+        - Api.zip
+    vpc:
+      securityGroupIds:
+        - sg-0c
+      subnetIds:
+        - subnet-0d
+    events:
+      - http:
+          path: /          
+          method: POST          
+          cors: 
+            headers: 
+              - clientcode 
+              - Content-Type 
+              - X-Amz-Date 
+              - Authorization 
+              - X-Api-Key 
+              - X-Amz-Security-Token 
+              - x-requested-with
+              - x-df-token

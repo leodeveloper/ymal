@@ -1,0 +1,14 @@
+{
+    "name": "detail-api",
+    "version": "1.0.0",
+    "description": "Serverless Framework for detail api",
+    "devDependencies": {
+        "serverless": "^3.19.0",
+        "serverless-deployment-bucket": "^1.6.0"
+    },
+    "scripts": {
+        "deploy-dev": "sls deploy --verbose --param=\"AUTHORIZER_ARN=arn:aws:lambda:eu-west-1:123:function:authorizer-dev\"",
+        "deploy-uat": "sls deploy --verbose --param=\"AUTHORIZER_ARN=arn:aws:lambda:eu-west-1:123:function:authorizer-dev\"",
+        "deploy-prod": "sls deploy --param=\"AUTHORIZER_ARN=arn:aws:lambda:eu-west-1:123:function:authorizer-production\""
+    }
+}

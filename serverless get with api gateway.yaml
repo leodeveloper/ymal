@@ -1,0 +1,76 @@
+service: service
+frameworkVersion: '3'
+custom:
+  deploymentBucket:
+    accelerate: true
+    blockPublicAccess: true
+    BlockPublicAcls: true
+    BlockPublicPolicy: true
+    IgnorePublicAcls: true
+    RestrictPublicBuckets: true
+    versioning: true
+  prune:
+    automatic: true
+    number: 10
+  uat:
+    deploymentBucket: 
+  prod:
+    deploymentBucket: 
+provider:
+  name: aws
+  region: eu-west-1
+  runtime: dotnet6
+  versionFunctions: true
+  deploymentMethod: direct
+  stage: ${env:ASPNETCORE_ENVIRONMENT}
+  deploymentBucket:
+    name: ${self:custom.${self:provider.stage}.deploymentBucket}
+    serverSideEncryption: AES256
+  deploymentPrefix: ${self:service}-${self:provider.stage}
+  tracing:
+    apiGateway: true
+    lambda: true
+package:
+  individually: true
+functions:
+  casedetailapi:
+    handler: Api::Api.Funtion::FunctionHandler
+    name: ${self:service}-lambda-${self:provider.stage}
+    memorySize: 1024
+    timeout: 30
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${self:provider.stage}
+    package:
+      artifact: api.zip
+      patterns:
+        - api.zip
+    vpc:
+      securityGroupIds:
+        - sg-0c
+      subnetIds:
+        - subnet-0d
+    events:
+      - http:
+          authorizer:
+            arn: ${param:AUTHORIZER_ARN}
+            identitySource: method.request.header.Authorization
+            identityValidationExpression: someRegex
+            name: customauthorizer
+            resultTtlInSeconds: 300
+            type: request
+          cors:
+            headers:
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - X-Amz-User-Agent
+              - PlatformTenantId
+            origin: '*'
+          path: /api/{Number}
+          request:
+            parameters:
+              paths:
+                Number: true
+          method: GET

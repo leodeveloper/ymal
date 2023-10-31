@@ -1,0 +1,70 @@
+
+stages:
+ - build
+ - deploy
+ - deploy-prod
+
+before_script:
+  - remove-item alias:sls
+  - $env:Path += ';C:\Program Files\Git\usr\local;C:\Users\devuser\.dotnet\tools;'
+
+build_casedetailapi: 
+  stage: build  
+  image: public.ecr.aws/lambda/dotnet:6
+  tags:
+    - shalambda
+  when:
+    manual
+  only:
+    refs:
+      - develop
+      - master
+  script:  
+   - echo 'building solution' 
+   - echo $CI_PROJECT_DIR  
+   - echo 'restore the solution' 
+   - dotnet restore -f --no-cache --ignore-failed-sources /nodereuse:false
+   - dotnet build /nodereuse:false --no-restore Api.sln --configuration release
+   - cd Api
+   - echo 'package the dotnet lambda'
+   - dotnet lambda package --output-package api.zip
+   - cp api.zip $CI_PROJECT_DIR
+   - cd ..
+   - echo 'lambda zipping completed'
+  artifacts:
+    paths:
+       -  $CI_PROJECT_DIR\api.zip
+    expire_in: "1 day"
+
+deploy_api_uat:
+  stage: deploy
+  image: public.ecr.aws/lambda/dotnet:6
+  tags:
+    - tags
+  when:
+    manual
+  only:
+    refs:
+      - develop
+      - master
+  dependencies:
+    - "build_api"
+  script:
+    - npm run deploy-uat
+  environment: uat
+
+deploy_api_prod:
+  stage: deploy-prod
+  image: public.ecr.aws/lambda/dotnet:6
+  tags:
+    - tags
+  when:
+    manual
+  only:
+    refs:
+      - master
+  dependencies:
+    - "build_api"
+  script:
+    - npm run deploy-prod
+  environment: prod

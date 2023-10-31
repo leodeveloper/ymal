@@ -1,0 +1,89 @@
+stages:
+  - build
+  - deploy
+  - deploy-prod
+
+before_script:
+  - remove-item alias:sls
+  - $env:Path += ';C:\Program Files\Git\usr\local;C:\Users\devuser\.dotnet\tools;'
+
+build_ziplambda:
+  stage: build
+  image: public.ecr.aws/lambda/dotnet:6
+  tags:
+    - tags
+
+  script:
+    - echo 'building solution'
+    - echo $CI_PROJECT_DIR
+    - dotnet restore -f --no-cache --ignore-failed-sources /nodereuse:false
+    - dotnet sonarscanner begin /k:"case" /d:sonar.host.url="https://sonar.com"  /d:sonar.login="key"
+    - dotnet build /nodereuse:false --no-restore Api.sln --configuration release
+    - dotnet sonarscanner end /d:sonar.login="key"
+    - cd CreateCaseApi
+    - dotnet lambda package --output-package Api.zip
+    - cp Api.zip $CI_PROJECT_DIR
+    - cd ..
+    - echo 'lambda zipping completed for Case API'
+    - cd Details
+    - dotnet lambda package --output-package Api.zip
+    - cp Api.zip $CI_PROJECT_DIR
+    - cd ..
+    - echo 'lambda zipping completed for  API'
+  rules:
+    - if: ($CONTEXT == "prod"  || $CONTEXT == "uat") && ($CI_COMMIT_REF_NAME == "developer" || $CI_COMMIT_REF_NAME == "master" )
+      when: manual
+  artifacts:
+    paths:
+      - $CI_PROJECT_DIR\Api.zip
+      - $CI_PROJECT_DIR\Api.zip
+    expire_in: "1 day"
+
+# deploy_createcase_dev:
+#   stage: deploy
+#   image: public.ecr.aws/lambda/dotnet:6
+#   tags:
+#     - createcasecicd
+#   when:
+#     manual
+#   only:
+#     refs:
+#       - /^feature/.*$/
+#       - /^fix/.*$/
+#       - /^hotfix/.*$/
+#       - develop
+#       - master
+#   dependencies:
+#     - "build_createcase"
+#   script:
+#     - npm run deploy-dev
+#   environment: dev
+
+deploy_uat:
+  stage: deploy
+  image: public.ecr.aws/lambda/dotnet:6
+  tags:
+    - tags
+
+  dependencies:
+    - "build_ziplambda"
+  script:
+    - npm run deploy-uat
+  rules:
+    - if: ($CONTEXT == "uat") && ($CI_COMMIT_REF_NAME == "developer"  )
+      when: manual
+  environment: uat
+
+deploy_createcase_prod:
+  stage: deploy-prod
+  image: public.ecr.aws/lambda/dotnet:6
+  tags:
+    - shalambda
+  dependencies:
+    - "build_ziplambda"
+  script:
+    - npm run deploy-prod
+  rules:
+    - if: ($CONTEXT == "prod" ) && ( $CI_COMMIT_REF_NAME == "master" )
+      when: manual
+  environment: prod

@@ -1,0 +1,15 @@
+{
+    "name": "case",
+    "version": "1.0.0",
+    "description": "Serverless Framework for case",
+    "devDependencies": {
+        "serverless": "^3.19.0",
+        "serverless-deployment-bucket": "^1.6.0"
+    },
+    "scripts": {
+        "deploy-dev": "sls deploy --verbose --param=\"AUTHORIZER_ARN=arn:aws:lambda:eu-west-1:1234:function:authorizer-dev\"",
+        "deploy-uat": "sls deploy -c serverless_case.yaml  && sls deploy -c serverless_fileupload.yaml",
+        "deploy-prod": "sls deploy -c serverless_case.yaml  && sls deploy -c serverless_fileupload.yaml"
+        
+    }
+}

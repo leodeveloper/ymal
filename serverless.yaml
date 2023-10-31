@@ -1,0 +1,74 @@
+service: servicename
+frameworkVersion: "3"
+custom:
+  deploymentBucket:
+    accelerate: true
+    blockPublicAccess: true
+    BlockPublicAcls: true
+    BlockPublicPolicy: true
+    IgnorePublicAcls: true
+    RestrictPublicBuckets: true
+    versioning: true
+  prune:
+    automatic: true
+    number: 10
+  uat:
+    rest_api_id: 
+    restapi_root_resource_id: 
+    deploymentBucket: 
+  prod:
+    #Sha () > Resources >/ ()
+    rest_api_id: 
+    restapi_root_resource_id: 
+    deploymentBucket: 
+provider:
+  name: aws
+  region: eu-west-1
+  runtime: dotnet6
+  versionFunctions: true
+  deploymentMethod: direct
+  stage: ${env:ASPNETCORE_ENVIRONMENT}
+  deploymentBucket:
+    name: ${self:custom.${self:provider.stage}.deploymentBucket}
+    serverSideEncryption: AES256
+  deploymentPrefix: ${self:service}-${self:provider.stage}
+  apiGateway:
+    restApiId: ${self:custom.${self:provider.stage}.rest_api_id}
+    restApiRootResourceId: ${self:custom.${self:provider.stage}.restapi_root_resource_id}
+package:
+  individually: true
+functions:
+  casedetailapi:
+    handler: Api::Api.Function::FunctionHandler
+    name: ${self:service}-lambda-${self:provider.stage}
+    memorySize: 1024
+    timeout: 30
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${self:provider.stage}
+    package:
+      artifact: api.zip
+      patterns:
+        - api.zip
+    vpc:
+      securityGroupIds:
+        - sg-
+      subnetIds:
+        - subnet-
+    events:
+      - http:
+          path: /repts/{Number}
+          request:
+            parameters:
+              paths:
+                Number: true
+          method: GET
+          cors:
+            headers:
+              - clientcode
+              - Content-Type
+              - X-Amz-Date
+              - Authorization
+              - X-Api-Key
+              - X-Amz-Security-Token
+              - x-requested-with
+              - x-df-token
